@@ -22,10 +22,9 @@ func NewPortForwarder(namespace, podName string, port int, stopCh chan struct{})
 	// stream is used to tell the port forwarder where to place its output or
 	// where to expect input if needed. For the port forwarding we just need
 	// the output eventually
-	// TODO: change from stdout to logger
+	// TODO: change from stdin to something that make sense (not stdout)
 	stream := genericclioptions.IOStreams{
-		In:     os.Stdin,
-		Out:    os.Stdout,
+		Out:    os.Stdin,
 		ErrOut: os.Stderr,
 	}
 	// managing termination signal from the terminal. As you can see the stopCh
