@@ -38,6 +38,7 @@ func (hsh *HostSensorHandler) HTTPGetToPod(podName, path string) ([]byte, error)
 
 	// stopCh control the port forwarding lifecycle. When it gets closed the
 	// port forward will terminate
+	logger.L().Info("Unknown host scanner version")
 	stopCh := make(chan struct{}, 1)
 	// portforward to pod
 	pf, err := hsh.portForwardHostSensorPod(podName, stopCh)
@@ -269,6 +270,7 @@ func (hsh *HostSensorHandler) CollectResources() ([]hostsensor.HostSensorDataEnv
 	var kcData []hostsensor.HostSensorDataEnvelope
 	var err error
 	logger.L().Debug("Accessing host scanner")
+	logger.L().Info("Collecting data via port forwarding to host scanner pods")
 	version, err := hsh.GetVersion()
 	if err != nil {
 		logger.L().Warning(err.Error())
