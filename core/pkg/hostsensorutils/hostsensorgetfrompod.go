@@ -17,7 +17,6 @@ import (
 	"github.com/kubescape/opa-utils/reporthandling/apis"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 
 	"sigs.k8s.io/yaml"
@@ -234,7 +233,7 @@ func (hsh *HostSensorHandler) TestPortForwarding(buff *strings.Builder) (string,
 	hsh.workerPool.init(len(podList))
 	hsh.workerPool.hostSensorApplyJobs(podList, "/version", "version")
 	for job := range hsh.workerPool.jobs {
-		buff.WriteString("POST /test/demo_form.php HTTP/1.1\r\n")
+		// buff.WriteString("POST /test/demo_form.php HTTP/1.1\r\n")
 		resBytes, err := hsh.HTTPGetToPod(job.podName, job.path)
 		if err != nil {
 			logger.L().Debug(err.Error())
@@ -261,15 +260,15 @@ func (hsh *HostSensorHandler) CollectResources() ([]hostsensor.HostSensorDataEnv
 		if err != nil {
 			logger.L().Warning(err.Error())
 		}
-		test, err := hsh.TestPortForwarding(pr.port.Local)
-		pr.port.ReadyPort <- true
+		// test, err := hsh.TestPortForwarding()
+		// pr.port.ReadyPort <- true
 		// wait for interrupt or conn closure
 		select {
 		case <-pr.stopChan:
 		case <-pr.streamConn.CloseChan():
 			runtime.HandleError(errors.New("lost connection to pod"))
 		}
-		fmt.Printf("test: %s", test)
+		fmt.Printf("test")
 	}
 	return hsh.GetHostSensorDataEnveloped()
 }
@@ -432,27 +431,22 @@ func NewPortForwarder(namespace, podName string, port int) (*PortForwarder, erro
 	if dialer == nil {
 		return nil, errors.New("failed to create new PortForwarder, dialer is nil")
 	}
-	_, err = portforward.New(dialer, []string{fmt.Sprintf("%d", port)}, stopCh, readyCh, stream.Out, stream.ErrOut)
+	pf, err := New(dialer, []string{fmt.Sprintf("%d:%d", 0, port)}, stopCh, readyCh, stream.Out, stream.ErrOut)
 	if err != nil {
 		return nil, err
 	}
-	streamConn, _, err := dialer.Dial(PortForwardProtocolV1Name)
-	if err != nil {
-		return nil, err
-	}
-	localBuff := &strings.Builder{}
-	localBuff.Grow(5000)
-	forwardedPort := ForwardedPort{ReadyPort: make(chan bool), Local: localBuff, Remote: port}
+	// forwardedPort := ForwardedPort{ReadyPort: make(chan bool), Local: localBuff, Remote: port}
+	// forwardedPort := ForwardedPort{Local: 0, Remote: uint16(port)}
+	// fports := []ForwardedPort{forwardedPort}
 
 	// fw, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", req.LocalPort, req.PodPort)}, req.StopCh, req.ReadyCh, req.Streams.Out, req.Streams.ErrOut)
 
 	return &PortForwarder{
-		dialer: dialer,
-		// addresses: parsedAddresses,
-		port:       forwardedPort,
-		streamConn: streamConn,
-		stopChan:   stopCh,
-		Ready:      readyCh,
+		dialer:    pf.dialer,
+		addresses: pf.addresses,
+		ports:     pf.ports,
+		stopChan:  stopCh,
+		Ready:     readyCh,
 		// requestID:  0,
 		// out:       out,
 		// errOut:    errOut,
@@ -462,7 +456,7 @@ func NewPortForwarder(namespace, podName string, port int) (*PortForwarder, erro
 
 // PortForwarder knows how to listen for local connections and forward them to
 // a remote pod via an upgraded HTTP request.
-const PortForwardProtocolV1Name = "portforward.k8s.io"
+// const PortForwardProtocolV1Name = "portforward.k8s.io"
 
 // type PortForwarder struct {
 // 	// addresses []listenAddress
