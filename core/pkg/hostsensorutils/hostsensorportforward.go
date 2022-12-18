@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/armosec/capacketsgo/k8sinterface"
+	"github.com/kubescape/k8s-interface/k8sinterface"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
