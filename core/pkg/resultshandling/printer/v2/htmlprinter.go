@@ -1,4 +1,4 @@
-package v2
+package printer
 
 import (
 	_ "embed"
@@ -141,7 +141,7 @@ func buildResourceControlResultTable(resourceControls []resourcesresults.Resourc
 	var ctlResults []ResourceControlResult
 	for _, resourceControl := range resourceControls {
 		if resourceControl.GetStatus(nil).IsFailed() {
-			control := summaryDetails.Controls.GetControl(reportsummary.EControlCriteriaName, resourceControl.GetName())
+			control := summaryDetails.Controls.GetControl(reportsummary.EControlCriteriaID, resourceControl.GetID())
 			ctlResult := buildResourceControlResult(resourceControl, control)
 
 			ctlResults = append(ctlResults, ctlResult)

@@ -3,6 +3,8 @@ package hostsensorutils
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/kubescape/k8s-interface/k8sinterface"
 	"github.com/kubescape/opa-utils/objectsenvelopes/hostsensor"
 	"github.com/kubescape/opa-utils/reporthandling/apis"
+	"k8s.io/client-go/tools/portforward"
 
 	"sigs.k8s.io/yaml"
 )
@@ -30,10 +33,54 @@ func (hsh *HostSensorHandler) getPodList() (res map[string]string, err error) {
 }
 
 func (hsh *HostSensorHandler) HTTPGetToPod(podName, path string) ([]byte, error) {
-	//  send the request to the port
+	// TODO: decide if to port-forward or not according to getting a response from the pod
+	// like by getversion for e.g.
 
-	restProxy := hsh.k8sObj.KubernetesClient.CoreV1().Pods(hsh.DaemonSet.Namespace).ProxyGet("http", podName, fmt.Sprintf("%d", hsh.HostSensorPort), path, map[string]string{})
-	return restProxy.DoRaw(hsh.k8sObj.Context)
+	// stopCh control the port forwarding lifecycle. When it gets closed the
+	// port forward will terminate
+	logger.L().Info("Unknown host scanner version")
+	stopCh := make(chan struct{}, 1)
+	// portforward to pod
+	pf, err := hsh.portForwardHostSensorPod(podName, stopCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to port-forward to host scanner pod: %s, err: %v", podName, err)
+	}
+	// close port-forward channel
+	defer close(stopCh)
+	// Wait for the port forwarder to be ready
+	<-pf.Ready
+	ports, err := pf.GetPorts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local port for host scanner pod: %s, err: %v", podName, err)
+	}
+	requestURL := fmt.Sprintf("http://localhost:%d%s", ports[0].Local, path)
+	res, err := http.Get(requestURL)
+	if err != nil || res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to get response from host scanner pod: %s, err: %v", podName, err)
+	}
+	resBody, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("client: could not read response body: %s\n", err)
+	}
+	return resBody, nil
+	// restProxy := hsh.k8sObj.KubernetesClient.CoreV1().Pods(hsh.DaemonSet.Namespace).ProxyGet("http", podName, fmt.Sprintf("%d", hsh.HostSensorPort), path, map[string]string{})
+	// return restProxy.DoRaw(hsh.k8sObj.Context)
+}
+
+func (hsh *HostSensorHandler) portForwardHostSensorPod(podName string, stopCh chan struct{}) (*portforward.PortForwarder, error) {
+	// Create a new port forwarder
+	pf, err := NewPortForwarder(hsh.GetNamespace(), podName, int(hsh.HostSensorPort), stopCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to port-forward to host scanner pod: %s, err: %v", podName, err)
+	}
+	// Start the port forwarder
+	go func() {
+		if err := pf.ForwardPorts(); err != nil {
+			panic(err)
+		}
+	}()
+
+	return pf, nil
 }
 
 func (hsh *HostSensorHandler) getResourcesFromPod(podName, nodeName, resourceKind, path string) (hostsensor.HostSensorDataEnvelope, error) {
@@ -114,7 +161,7 @@ func (hsh *HostSensorHandler) GetVersion() (string, error) {
 	for job := range hsh.workerPool.jobs {
 		resBytes, err := hsh.HTTPGetToPod(job.podName, job.path)
 		if err != nil {
-			return "", err
+			logger.L().Debug(err.Error())
 		} else {
 			version := strings.ReplaceAll(string(resBytes), "\"", "")
 			version = strings.ReplaceAll(version, "\n", "")
@@ -223,6 +270,7 @@ func (hsh *HostSensorHandler) CollectResources() ([]hostsensor.HostSensorDataEnv
 	var kcData []hostsensor.HostSensorDataEnvelope
 	var err error
 	logger.L().Debug("Accessing host scanner")
+	logger.L().Info("Collecting data via port forwarding to host scanner pods")
 	version, err := hsh.GetVersion()
 	if err != nil {
 		logger.L().Warning(err.Error())
