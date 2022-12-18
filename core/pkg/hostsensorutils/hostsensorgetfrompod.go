@@ -11,6 +11,7 @@ import (
 	"github.com/kubescape/k8s-interface/k8sinterface"
 	"github.com/kubescape/opa-utils/objectsenvelopes/hostsensor"
 	"github.com/kubescape/opa-utils/reporthandling/apis"
+	"k8s.io/client-go/tools/portforward"
 
 	"sigs.k8s.io/yaml"
 )
@@ -30,10 +31,45 @@ func (hsh *HostSensorHandler) getPodList() (res map[string]string, err error) {
 }
 
 func (hsh *HostSensorHandler) HTTPGetToPod(podName, path string) ([]byte, error) {
-	//  send the request to the port
+	// TODO: decide if to port-forward or not according to getting a response from the pod
+	// like by getversion for e.g.
+	//TODO: handle errors
 
-	restProxy := hsh.k8sObj.KubernetesClient.CoreV1().Pods(hsh.DaemonSet.Namespace).ProxyGet("http", podName, fmt.Sprintf("%d", hsh.HostSensorPort), path, map[string]string{})
+	// stopCh control the port forwarding lifecycle. When it gets closed the
+	// port forward will terminate
+	stopCh := make(chan struct{}, 1)
+	// portforward to pod
+	pf, err := hsh.portForwardHostSensorPod(podName, stopCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to port-forward to host scanner pod: %s, err: %v", podName, err)
+	}
+	// close port-forward channel
+	defer close(stopCh)
+	// Wait for the port forwarder to be ready
+	<-pf.Ready
+	ports, err := pf.GetPorts()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local port for host scanner pod: %s, err: %v", podName, err)
+	}
+	// use http.get() instead?
+	restProxy := hsh.k8sObj.KubernetesClient.CoreV1().Pods(hsh.DaemonSet.Namespace).ProxyGet("http", podName, fmt.Sprintf("%d", ports[0].Local), path, map[string]string{})
 	return restProxy.DoRaw(hsh.k8sObj.Context)
+}
+
+func (hsh *HostSensorHandler) portForwardHostSensorPod(podName string, stopCh chan struct{}) (*portforward.PortForwarder, error) {
+	// Create a new port forwarder
+	pf, err := NewPortForwarder(hsh.GetNamespace(), podName, int(hsh.HostSensorPort), stopCh)
+	if err != nil {
+		return nil, fmt.Errorf("failed to port-forward to host scanner pod: %s, err: %v", podName, err)
+	}
+	// Start the port forwarder
+	go func() {
+		if err := pf.ForwardPorts(); err != nil {
+			panic(err)
+		}
+	}()
+
+	return pf, nil
 }
 
 func (hsh *HostSensorHandler) getResourcesFromPod(podName, nodeName, resourceKind, path string) (hostsensor.HostSensorDataEnvelope, error) {
