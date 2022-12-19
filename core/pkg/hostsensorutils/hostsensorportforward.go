@@ -1,9 +1,10 @@
 package hostsensorutils
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,9 +41,9 @@ func NewPortForwarder(namespace, podName string, port int, stopCh chan struct{})
 	if err != nil {
 		return nil, err
 	}
-
+	writer := io.Writer(ioutil.Discard)
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, &url.URL{Scheme: "https", Path: path, Host: hostIP})
-	fw, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", 0, port)}, stopCh, readyCh, &bytes.Buffer{}, &bytes.Buffer{})
+	fw, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", 0, port)}, stopCh, readyCh, writer, writer)
 	if err != nil {
 		return nil, err
 	}
