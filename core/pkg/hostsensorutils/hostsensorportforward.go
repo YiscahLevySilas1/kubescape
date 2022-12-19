@@ -3,6 +3,8 @@ package hostsensorutils
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,7 +13,6 @@ import (
 	"syscall"
 
 	"github.com/kubescape/k8s-interface/k8sinterface"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 )
@@ -19,14 +20,6 @@ import (
 func NewPortForwarder(namespace, podName string, port int, stopCh chan struct{}) (*portforward.PortForwarder, error) {
 	// readyCh communicate when the port forward is ready to get traffic
 	readyCh := make(chan struct{})
-	// stream is used to tell the port forwarder where to place its output or
-	// where to expect input if needed. For the port forwarding we just need
-	// the output eventually
-	// TODO: change from stdin to something that make sense (not stdout)
-	stream := genericclioptions.IOStreams{
-		Out:    os.Stdin,
-		ErrOut: os.Stderr,
-	}
 	// managing termination signal from the terminal. As you can see the stopCh
 	// gets closed to gracefully handle its termination.
 	sigs := make(chan os.Signal, 1)
@@ -48,9 +41,9 @@ func NewPortForwarder(namespace, podName string, port int, stopCh chan struct{})
 	if err != nil {
 		return nil, err
 	}
-
+	writer := io.Writer(ioutil.Discard)
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: transport}, http.MethodPost, &url.URL{Scheme: "https", Path: path, Host: hostIP})
-	fw, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", 0, port)}, stopCh, readyCh, stream.Out, stream.ErrOut)
+	fw, err := portforward.New(dialer, []string{fmt.Sprintf("%d:%d", 0, port)}, stopCh, readyCh, writer, writer)
 	if err != nil {
 		return nil, err
 	}
