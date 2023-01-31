@@ -145,7 +145,7 @@ func (k8sHandler *K8sResourceHandler) GetResources(sessionObj *cautils.OPASessio
 	if len(cloudResources) > 0 {
 		err := k8sHandler.collectCloudResources(sessionObj, allResources, ksResourceMap, cloudResources)
 		if err != nil {
-			logger.L().Warning("failed to collect cloud resources", helpers.Error(err))
+			logger.L().Debug("failed to collect cloud resources", helpers.Error(err))
 		}
 	}
 
